@@ -138,7 +138,6 @@ class MLP(Model):
             if i < len(self.linears) - 1:
                 x = torch.tanh(x)
 
-            # x = torch.tanh(l(x)) if i < len(self.linears) - 1 else l(x)
         return x
 
     def compute_loss(self, logits: Tensor, targets: Tensor) -> Tensor:
@@ -164,7 +163,7 @@ class CharDataset(Dataset):
     def __init__(self, words: list[str], chars: list[str], max_seq_length: int):
         self.words = words
         self.chars = ["."] + chars
-        self.max_seq_length = max_seq_length
+        self._max_seq_length = max_seq_length
 
         self.stoi = {ch: i for i, ch in enumerate(self.chars)}
         self.itos = {i: ch for ch, i in self.stoi.items()}
@@ -179,8 +178,12 @@ class CharDataset(Dataset):
     def vocab_size(self):
         return len(self.chars)
 
+    @property
+    def max_seq_length(self):
+        return self.get_output_length()
+
     def get_output_length(self):
-        return self.max_seq_length + 1  # <start> token
+        return self._max_seq_length + 1  # <start> token
 
     def encode(self, word: str):
         return torch.tensor([self.stoi[w] for w in word], dtype=torch.long)
@@ -192,8 +195,8 @@ class CharDataset(Dataset):
 
     def __getitem__(self, idx):
         ix = self.encode(self.words[idx])
-        x = torch.zeros(self.max_seq_length + 1, dtype=torch.long)
-        y = torch.zeros(self.max_seq_length + 1, dtype=torch.long)
+        x = torch.zeros(self._max_seq_length + 1, dtype=torch.long)
+        y = torch.zeros(self._max_seq_length + 1, dtype=torch.long)
 
         x[1 : 1 + len(ix)] = ix
         y[: len(ix)] = ix

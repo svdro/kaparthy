@@ -2,4 +2,5 @@
 *.txt
 jupyter/*
 out/*
+__pycache__
 
