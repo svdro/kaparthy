@@ -1,6 +1,6 @@
 import torch
 from torch import nn, Tensor
-from models import BigramLanguageModel
+from models import BigramLanguageModel, Transformer
 from dataclasses import dataclass
 
 
@@ -73,7 +73,6 @@ def main(c: Config):
     ### create dataset
     text = load_data()
     tokenizer = Tokenizer(text)
-    c.n_embd = tokenizer.vocab_size
 
     data = torch.tensor(tokenizer.encode(text))
 
@@ -82,7 +81,7 @@ def main(c: Config):
     ds_val = Dataset(data[n:], bsz=c.batch_size, block_size=c.block_size)
 
     ### create model
-    model = BigramLanguageModel(tokenizer.vocab_size, c.n_embd).to(c.device)
+    model = Transformer(tokenizer.vocab_size, c.n_embd, c.block_size).to(c.device)
 
     ### train
     optim = torch.optim.AdamW(model.parameters(), lr=c.learning_rate)
@@ -106,6 +105,8 @@ def main(c: Config):
         loss.backward()
         optim.step()
 
+    print("done training")
+    print("generating text")
     out = model.generate(torch.zeros((1, 1), dtype=torch.long), max_new_tokens=1000)
     print(tokenizer.decode(out.tolist()[0]))
 
@@ -118,7 +119,7 @@ if __name__ == "__main__":
         block_size=8,
         n_embd=32,
         learning_rate=1e-3,
-        max_iters=1000,
+        max_iters=15000,
         eval_interval=500,
         eval_steps=100,
         device="cuda" if torch.cuda.is_available() else "cpu",
