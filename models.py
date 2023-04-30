@@ -32,12 +32,64 @@ class Head(nn.Module):
         return wei @ v  # (B, T, T) @ (B, T, C) -> (B, T, C)
 
 
+class MultiHeadAttention(nn.Module):
+    """Multi-head attention"""
+
+    def __init__(self, n_heads: int, head_size: int, n_embd: int, block_size: int):
+        super().__init__()
+        self.heads = nn.ModuleList(
+            [Head(head_size, n_embd, block_size) for _ in range(n_heads)]
+        )
+
+    def forward(self, x):
+        return torch.cat([h(x) for h in self.heads], dim=-1)
+
+
+class FeedForward(nn.Module):
+    """Feed-forward layer: linear layer followed by ReLU"""
+
+    def __init__(self, n_embd: int):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_embd, n_embd),
+            nn.ReLU(),
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class Block(nn.Module):
+    """Transformer block: communication followed by computation"""
+
+    def __init__(self, n_heads: int, n_embd: int, block_size: int):
+        super().__init__()
+        head_size = n_embd // n_heads
+        self.sa = MultiHeadAttention(n_heads, head_size, n_embd, block_size)
+        self.ffwd = FeedForward(n_embd)
+
+    def forward(self, x):
+        x = self.sa(x)
+        x = self.ffwd(x)
+        return x
+
+
 class Transformer(nn.Module):
-    def __init__(self, vocab_size: int, n_embd: int, block_size: int = 128):
+    def __init__(
+        self, vocab_size: int, n_heads: int, n_embd: int, block_size: int = 128
+    ):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
         self.position_embedding_table = nn.Embedding(block_size, n_embd)
-        self.sa_head = Head(n_embd, n_embd, block_size)
+        self.blocks = nn.Sequential(
+            Block(n_heads, n_embd, block_size),
+            Block(n_heads, n_embd, block_size),
+            Block(n_heads, n_embd, block_size),
+        )
+        # self.sa_heads = MultiHeadAttention(
+        # n_heads, n_embd // n_heads, n_embd, block_size
+        # )
+        # self.ffwd = FeedForward(n_embd)
         self.lm_head = nn.Linear(n_embd, vocab_size)
 
     def forward(self, idx, targets=None) -> tuple[Tensor, Optional[Tensor]]:
@@ -51,7 +103,10 @@ class Transformer(nn.Module):
         tok_emb = self.token_embedding_table(idx)  # (B, T, C)
         pos_emb = self.position_embedding_table(torch.arange(T, device=idx.device))
         x = tok_emb + pos_emb  # (B, T, C)
-        x = self.sa_head(x)  # apply one head of self-attention
+        # x = self.sa_heads(x)  # (B, T, C)
+        # x = self.ffwd(x)  # (B, T, C)
+
+        x = self.blocks(x)  # (B, T, C)
         logits = self.lm_head(x)  # (B, T, vocab_size)
 
         loss = None

@@ -61,6 +61,7 @@ class Config:
     batch_size: int
     block_size: int
     n_embd: int
+    n_heads: int
     learning_rate: float
     max_iters: int
     eval_interval: int
@@ -81,7 +82,9 @@ def main(c: Config):
     ds_val = Dataset(data[n:], bsz=c.batch_size, block_size=c.block_size)
 
     ### create model
-    model = Transformer(tokenizer.vocab_size, c.n_embd, c.block_size).to(c.device)
+    model = Transformer(tokenizer.vocab_size, c.n_heads, c.n_embd, c.block_size).to(
+        c.device
+    )
 
     ### train
     optim = torch.optim.AdamW(model.parameters(), lr=c.learning_rate)
@@ -118,10 +121,13 @@ if __name__ == "__main__":
         batch_size=32,
         block_size=8,
         n_embd=32,
+        n_heads=4,
         learning_rate=1e-3,
-        max_iters=15000,
+        max_iters=5000,
         eval_interval=500,
         eval_steps=100,
         device="cuda" if torch.cuda.is_available() else "cpu",
     )
+
+    assert c.n_embd % c.n_heads == 0, "n_embd must be divisible by n_heads"
     main(c)
