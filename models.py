@@ -8,13 +8,16 @@ from typing import Optional
 class Head(nn.Module):
     """one head of self-attention"""
 
-    def __init__(self, head_size: int, n_embd: int, block_size: int):
+    def __init__(
+        self, head_size: int, n_embd: int, block_size: int, dropout: float = 0.1
+    ):
         super().__init__()
         self.key = nn.Linear(n_embd, head_size, bias=False)
         self.query = nn.Linear(n_embd, head_size, bias=False)
         self.value = nn.Linear(n_embd, head_size, bias=False)
         self.register_buffer("tril", torch.tril(torch.ones(block_size, block_size)))
-        # self.tril =torch.tril(torch.ones(block_size, block_size))
+
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         _, T, C = x.shape
@@ -26,6 +29,7 @@ class Head(nn.Module):
         wei = q @ k.transpose(-2, -1) * C**-0.5  # (B, T, C) @ (B, C, T) -> (B, T, T)
         wei = wei.masked_fill(self.tril[:T, :T] == 0, float("-inf"))  # (B, T, T)
         wei = F.softmax(wei, dim=-1)  # (B, T, T)
+        wei = self.dropout(wei)
 
         # perform the weighted aggregation of the values
         v = self.value(x)  # (B, T, C)
@@ -35,28 +39,37 @@ class Head(nn.Module):
 class MultiHeadAttention(nn.Module):
     """Multi-head attention"""
 
-    def __init__(self, n_heads: int, head_size: int, n_embd: int, block_size: int):
+    def __init__(
+        self,
+        n_heads: int,
+        head_size: int,
+        n_embd: int,
+        block_size: int,
+        dropout: float = 0.1,
+    ):
         super().__init__()
         self.heads = nn.ModuleList(
-            [Head(head_size, n_embd, block_size) for _ in range(n_heads)]
+            [Head(head_size, n_embd, block_size, dropout) for _ in range(n_heads)]
         )
         self.proj = nn.Linear(n_heads * head_size, n_embd)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         out = torch.cat([h(x) for h in self.heads], dim=-1)
-        out = self.proj(out)
+        out = self.dropout(self.proj(out))
         return out
 
 
 class FeedForward(nn.Module):
     """Feed-forward layer: linear layer followed by ReLU"""
 
-    def __init__(self, n_embd: int):
+    def __init__(self, n_embd: int, dropout: float = 0.1):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(n_embd, 4 * n_embd),
             nn.ReLU(),
             nn.Linear(4 * n_embd, n_embd),  # projection
+            nn.Dropout(dropout),
         )
 
     def forward(self, x):
@@ -66,11 +79,13 @@ class FeedForward(nn.Module):
 class Block(nn.Module):
     """Transformer block: communication followed by computation"""
 
-    def __init__(self, n_heads: int, n_embd: int, block_size: int):
+    def __init__(
+        self, n_heads: int, n_embd: int, block_size: int, dropout: float = 0.1
+    ):
         super().__init__()
         head_size = n_embd // n_heads
-        self.sa = MultiHeadAttention(n_heads, head_size, n_embd, block_size)
-        self.ffwd = FeedForward(n_embd)
+        self.sa = MultiHeadAttention(n_heads, head_size, n_embd, block_size, dropout)
+        self.ffwd = FeedForward(n_embd, dropout)
         self.ln1 = nn.LayerNorm(n_embd)
         self.ln2 = nn.LayerNorm(n_embd)
 
@@ -82,15 +97,19 @@ class Block(nn.Module):
 
 class Transformer(nn.Module):
     def __init__(
-        self, vocab_size: int, n_heads: int, n_embd: int, block_size: int = 128
+        self,
+        vocab_size: int,
+        n_layers: int,
+        n_heads: int,
+        n_embd: int,
+        block_size: int = 128,
+        dropout: float = 0.1,
     ):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
         self.position_embedding_table = nn.Embedding(block_size, n_embd)
         self.blocks = nn.Sequential(
-            Block(n_heads, n_embd, block_size),
-            Block(n_heads, n_embd, block_size),
-            Block(n_heads, n_embd, block_size),
+            *[Block(n_heads, n_embd, block_size) for _ in range(n_layers)],
             nn.LayerNorm(n_embd),
         )
         # self.sa_heads = MultiHeadAttention(
